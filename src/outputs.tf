@@ -6,5 +6,9 @@ output "okta_user" {
 }
 
 output "iam_idp_arn" {
-  value = aws_iam_saml_provider.okta.id
+  value = aws_iam_saml_provider.okta.arn
+}
+
+output "app_id" {
+  value = okta_app_saml.aws.id
 }
