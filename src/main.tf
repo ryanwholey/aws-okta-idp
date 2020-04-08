@@ -44,11 +44,14 @@ resource "aws_iam_user" "okta_user" {
 
 resource "aws_iam_access_key" "okta_user" {
   provider = aws.hub
+
   user     = aws_iam_user.okta_user.name
 }
 
 # AWS HUB ACCOUNT 
 resource "aws_iam_saml_provider" "okta" {
+  provider = aws.hub
+
   name                   = "Okta"
   saml_metadata_document = okta_app_saml.aws.metadata
 }
