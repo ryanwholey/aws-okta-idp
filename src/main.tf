@@ -19,6 +19,7 @@ resource "okta_app_saml" "aws" {
     type      = "EXPRESSION"
     values = [
       "arn:aws:iam::695834901730:saml-provider/Okta,arn:aws:iam::695834901730:role/developer",
+      "arn:aws:iam::695834901730:saml-provider/Okta,arn:aws:iam::695834901730:role/platform",
     ]
   }
 
@@ -36,7 +37,7 @@ resource "okta_app_saml" "aws" {
     namespace = "urn:oasis:names:tc:SAML:2.0:attrname-format:basic"
     type      = "EXPRESSION"
     values = [
-      "3600",
+      var.session_duration,
     ]
   }
 
@@ -52,12 +53,23 @@ resource "okta_app_saml" "aws" {
   }
 }
 
+data "okta_group" "developers" {
+  name = "developers"
+}
+
+resource "okta_app_group_assignment" "developers" {
+  app_id   = okta_app_saml.aws.id
+  group_id = data.okta_group.developers.id
+}
+
 resource "aws_iam_saml_provider" "okta" {
   name                   = "Okta"
   saml_metadata_document = okta_app_saml.aws.metadata
 }
 
-data "aws_iam_policy_document" "allow_okta" {
+
+# Developer role
+data "aws_iam_policy_document" "allow_idp_developer" {
   statement {
     effect = "Allow"
     actions = [
@@ -75,12 +87,12 @@ data "aws_iam_policy_document" "allow_okta" {
   }
 }
 
-resource "aws_iam_role" "okta_developer" {
+resource "aws_iam_role" "developer" {
   name               = "developer"
-  assume_role_policy = data.aws_iam_policy_document.allow_okta.json
+  assume_role_policy = data.aws_iam_policy_document.allow_idp_developer.json
 }
 
-data "aws_iam_policy_document" "allow_assume_developer" {
+data "aws_iam_policy_document" "s3_read" {
   statement {
     effect = "Allow"
     actions = [
@@ -90,21 +102,56 @@ data "aws_iam_policy_document" "allow_assume_developer" {
   }
 }
 
-resource "aws_iam_policy" "allow_assume_developer" {
-  name   = "allow_assume_developer"
-  policy = data.aws_iam_policy_document.allow_assume_developer.json
+resource "aws_iam_policy" "s3_read" {
+  name   = "s3_read"
+  policy = data.aws_iam_policy_document.s3_read.json
 }
 
-resource "aws_iam_role_policy_attachment" "okta_attach" {
-  policy_arn = aws_iam_policy.allow_assume_developer.arn
-  role       = aws_iam_role.okta_developer.name
+resource "aws_iam_role_policy_attachment" "attach_s3_read" {
+  policy_arn = aws_iam_policy.s3_read.arn
+  role       = aws_iam_role.developer.name
 }
 
-data "okta_group" "developers" {
-  name = "developers"
+# Platform role
+data "aws_iam_policy_document" "allow_idp_platform" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "sts:AssumeRoleWithSAML",
+    ]
+    principals {
+      type        = "Federated"
+      identifiers = [aws_iam_saml_provider.okta.arn]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "SAML:aud"
+      values   = ["https://signin.aws.amazon.com/saml"]
+    }
+  }
 }
 
-resource "okta_app_group_assignment" "example" {
-  app_id   = okta_app_saml.aws.id
-  group_id = data.okta_group.developers.id
+resource "aws_iam_role" "platform" {
+  name               = "platform"
+  assume_role_policy = data.aws_iam_policy_document.allow_idp_platform.json
+}
+
+data "aws_iam_policy_document" "full" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "*",
+    ]
+    resources = ["*"]
+  }
+}
+
+resource "aws_iam_policy" "full" {
+  name   = "full"
+  policy = data.aws_iam_policy_document.full.json
+}
+
+resource "aws_iam_role_policy_attachment" "attach_full" {
+  policy_arn = aws_iam_policy.full.arn
+  role       = aws_iam_role.platform.name
 }
