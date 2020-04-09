@@ -18,8 +18,8 @@ resource "okta_app_saml" "aws" {
     namespace = "urn:oasis:names:tc:SAML:2.0:attrname-format:uri"
     type      = "EXPRESSION"
     values = [
-      "arn:aws:iam::695834901730:saml-provider/Okta,arn:aws:iam::695834901730:role/developer",
-      "arn:aws:iam::695834901730:saml-provider/Okta,arn:aws:iam::695834901730:role/platform",
+      "String.join(\"\", \"arn:aws:iam::695834901730:saml-provider/Okta,arn:aws:iam::695834901730:role/\", String.replace(user.department, \" \", \"-\"), \"/\", String.replace(user.division, \" \", \"-\"), \"-\", \"read-only\")",
+      "String.join(\"\", \"arn:aws:iam::695834901730:saml-provider/Okta,arn:aws:iam::695834901730:role/\", String.replace(user.department, \" \", \"-\"), \"/\", String.replace(user.division, \" \", \"-\"), \"-\", \"admin\")"
     ]
   }
 
@@ -67,9 +67,8 @@ resource "aws_iam_saml_provider" "okta" {
   saml_metadata_document = okta_app_saml.aws.metadata
 }
 
-
-# Developer role
-data "aws_iam_policy_document" "allow_idp_developer" {
+# engineering developer read only role
+data "aws_iam_policy_document" "allow_idp_engineering_developer_read_only" {
   statement {
     effect = "Allow"
     actions = [
@@ -87,16 +86,18 @@ data "aws_iam_policy_document" "allow_idp_developer" {
   }
 }
 
-resource "aws_iam_role" "developer" {
-  name               = "developer"
-  assume_role_policy = data.aws_iam_policy_document.allow_idp_developer.json
+resource "aws_iam_role" "engineering_developer_read_only" {
+  name               = "developer-read-only"
+  path               = "/engineering/"
+  assume_role_policy = data.aws_iam_policy_document.allow_idp_engineering_developer_read_only.json
 }
 
 data "aws_iam_policy_document" "s3_read" {
   statement {
     effect = "Allow"
     actions = [
-      "s3:*",
+      "s3:Get*",
+      "s3:List*"
     ]
     resources = ["*"]
   }
@@ -109,11 +110,11 @@ resource "aws_iam_policy" "s3_read" {
 
 resource "aws_iam_role_policy_attachment" "attach_s3_read" {
   policy_arn = aws_iam_policy.s3_read.arn
-  role       = aws_iam_role.developer.name
+  role       = aws_iam_role.engineering_developer_read_only.name
 }
 
-# Platform role
-data "aws_iam_policy_document" "allow_idp_platform" {
+# engineering developer admin
+data "aws_iam_policy_document" "allow_idp_engineering_developer_admin" {
   statement {
     effect = "Allow"
     actions = [
@@ -131,9 +132,10 @@ data "aws_iam_policy_document" "allow_idp_platform" {
   }
 }
 
-resource "aws_iam_role" "platform" {
-  name               = "platform"
-  assume_role_policy = data.aws_iam_policy_document.allow_idp_platform.json
+resource "aws_iam_role" "engineering_developer_admin" {
+  name               = "developer-admin"
+  path               = "/engineering/"
+  assume_role_policy = data.aws_iam_policy_document.allow_idp_engineering_developer_admin.json
 }
 
 data "aws_iam_policy_document" "full" {
@@ -153,5 +155,5 @@ resource "aws_iam_policy" "full" {
 
 resource "aws_iam_role_policy_attachment" "attach_full" {
   policy_arn = aws_iam_policy.full.arn
-  role       = aws_iam_role.platform.name
+  role       = aws_iam_role.engineering_developer_admin.name
 }
